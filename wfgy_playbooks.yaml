@@ -1,0 +1,56 @@
+# WFGY Task-Family Playbooks (root-level)
+version: 1
+budget:
+  hard_sec: 300
+  stage1_ratio: 0.72
+  stage2_ratio: 0.20
+  safety_ratio: 0.08
+families:
+  build:
+    detect:
+      any_of: ["package.json", "requirements.txt", "setup.py", "pyproject.toml", "Makefile"]
+      text_hint: ["compile", "install", "build", "pip", "npm", "make"]
+    stage1:
+      args_append: []
+      env: { WF_SAFE_MODE: "0", WF_DETERMINISTIC: "1" }
+    stage2:
+      args_append: ["--safe-mode"]
+      env: { WF_SAFE_MODE: "1", WF_DETERMINISTIC: "1" }
+  file_io:
+    detect:
+      any_of: ["*.csv", "*.json", "*.tsv"]
+      text_hint: ["parse", "csv", "json", "rename", "move", "copy", "extract"]
+    stage1:
+      env: { WF_DETERMINISTIC: "1" }
+      args_append: []
+    stage2:
+      env: { WF_DETERMINISTIC: "1", WF_WDT: "1" }
+      args_append: []
+  path_search:
+    detect:
+      any_of: []
+      text_hint: ["search", "find file", "locate", "path", "grep"]
+    stage1:
+      env: { WF_DETERMINISTIC: "1" }
+      args_append: []
+    stage2:
+      env: { WF_DETERMINISTIC: "1", WF_WDT: "1" }
+      args_append: ["--retry-on-miss"]
+  data_fetch:
+    detect:
+      any_of: []
+      text_hint: ["download", "curl", "wget", "http", "api"]
+    stage1:
+      env: { WF_DETERMINISTIC: "1" }
+      args_append: []
+    stage2:
+      env: { WF_DETERMINISTIC: "1", WF_WDT: "1" }
+      args_append: []
+  generic:
+    detect: { any_of: [], text_hint: [] }
+    stage1:
+      env: { WF_DETERMINISTIC: "1" }
+      args_append: []
+    stage2:
+      env: { WF_DETERMINISTIC: "1", WF_WDT: "1" }
+      args_append: []
