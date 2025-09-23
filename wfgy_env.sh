@@ -1,5 +1,30 @@
-export WF_PLAYBOOK_PATH="wfgy_playbooks.yaml"
-export WF_DETERMINISTIC="1"
-export WF_WDT="0"
-export WF_SAFE_MODE="0"
-export TBENCH_TASK_TIMEOUT="${TBENCH_TASK_TIMEOUT:-300}"
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+if [[ -f ".env.local" ]]; then
+  set -a
+  source ./.env.local
+  set +a
+fi
+
+: "${OPENAI_API_KEY:?OPENAI_API_KEY is required}"
+
+export WFGY_SEED="${WFGY_SEED:-42}"
+export WFGY_STAGE1_TOKENS="${WFGY_STAGE1_TOKENS:-512}"
+export WFGY_STAGE2_TOKENS="${WFGY_STAGE2_TOKENS:-1024}"
+
+export WFGY_RETRY_MAX="${WFGY_RETRY_MAX:-2}"
+export WFGY_RETRY_BASE_DELAY_MS="${WFGY_RETRY_BASE_DELAY_MS:-250}"
+export WFGY_RETRY_JITTER_MS="${WFGY_RETRY_JITTER_MS:-120}"
+
+export WFGY_COLLAPSE_THRESHOLD="${WFGY_COLLAPSE_THRESHOLD:-0.18}"
+export WFGY_EARLYSTOP_MIN_CHARS="${WFGY_EARLYSTOP_MIN_CHARS:-64}"
+
+export WFGY_ROUTER_PORT="${WFGY_ROUTER_PORT:-8080}"
+export WFGY_UPSTREAM_MODEL="${WFGY_UPSTREAM_MODEL:-openai/gpt-4o-mini}"
+export WFGY_REQUEST_TIMEOUT_S="${WFGY_REQUEST_TIMEOUT_S:-90}"
+
+export WFGY_LOG_FILE="${WFGY_LOG_FILE:-wfgy.log}"
+export WFGY_PROXY_LOG_FILE="${WFGY_PROXY_LOG_FILE:-wfgy_proxy.log}"
+
+echo "[wfgy-env] seed=$WFGY_SEED s1=$WFGY_STAGE1_TOKENS s2=$WFGY_STAGE2_TOKENS retry=$WFGY_RETRY_MAX port=$WFGY_ROUTER_PORT model=$WFGY_UPSTREAM_MODEL"
