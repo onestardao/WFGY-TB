@@ -244,24 +244,24 @@ MIT or Apache-2.0 (choose one and add a LICENSE file).
 
 | File                        | Size (bytes) | SHA256                                                           | MD5                              |
 | --------------------------- | -----------: | ---------------------------------------------------------------- | -------------------------------- |
-| `wfgy_dt_guard.py`          |          869 | f8a487c5b627cb7391e0062d14d03e604acf7867aaa0bbb34e98657570fc6773 | e747acecc3c74a743d974a19bd8bb729 |
-| `wfgy_env.sh`               |          173 | 1a181f5af429060d6e4796a93e157970f796340701694f18fe1e7862717ae623 | 69dc00b10688b4986780e7f27c125581 |
-| `wfgy_playbooks.yaml`       |         1578 | 6e69a9c87b602bbec36d64087521d82014a102a2dc4d6cbc3992a2a19ea7591e | 4525a547eb0674a1b58b525145c8e05e |
-| `wfgy_retry.py`             |         5227 | 17d19905fca5c0f486e1453682f70c7f19871bfb90383849dc66ad4dc31850b1 | af4837e9f1a0f2cdda3c251d9a5cd8f8 |
-| `wfgy_router.sh`            |          743 | c6ea6112ebbf0ae0bfae19c6b95e7d4a2ab6077ed76bdbb60dc2622d9c47297c | 28e99a9194df64fd6edce21d68c769b7 |
-| `wfgy_semantic_firewall.py` |         1194 | edfe5bccd96252fc01c3d561bc214161292feac5533757d29927e82d717b2e86 | edef4e8188d2bca5d00cc7e260084382 |
+| `wfgy_dt_guard.py`          |         1005 | cb50ac57c6202f2de343e28b2e14e30905f0bd06b4ba498c2d22da73553a6d84 | f790fa578016afd2aed1d480abb85abe |
+| `wfgy_env.sh`               |         1077 | f417caea2171fe3c12e818c869fd313445683b38adeaa8a9e8e766b18dcfc133 | 3aefca92012d4c5d64c7f9df8d98a29e |
+| `wfgy_playbooks.yaml`       |          835 | 28344dabe1a33e8eba918c3450744994758d7bae51fd29d8bffd3659256ca434 | f0df0b459f039026fa90481be55bef4e |
+| `wfgy_retry.py`             |         2947 | eb41596e18d15b4bf4ac996803b792099d3d0a6391a39e00ef70a2ec68442820 | 3324311daed32f9fdfac13f9c2db14c6 |
+| `wfgy_router.sh`            |          398 | c9433299dd8151a41831999f64a446066b97ead992292ac43b1602d095773adf | 8552e4feb1e52cfc2518c63f41fa1e3a |
+| `wfgy_semantic_firewall.py` |         1280 | 011908b120d8d510deada0762df8b5b9955ea06b9aa806efef917e9eaab52bf4 | 8dc9a8a8315b5f706561df77832ffc6a |
 
 ### Verify locally
 
 ```bash
 # paste into repo root
 cat > CHECKSUMS.sha256 <<'EOF'
-f8a487c5b627cb7391e0062d14d03e604acf7867aaa0bbb34e98657570fc6773  wfgy_dt_guard.py
-1a181f5af429060d6e4796a93e157970f796340701694f18fe1e7862717ae623  wfgy_env.sh
-6e69a9c87b602bbec36d64087521d82014a102a2dc4d6cbc3992a2a19ea7591e  wfgy_playbooks.yaml
-17d19905fca5c0f486e1453682f70c7f19871bfb90383849dc66ad4dc31850b1  wfgy_retry.py
-c6ea6112ebbf0ae0bfae19c6b95e7d4a2ab6077ed76bdbb60dc2622d9c47297c  wfgy_router.sh
-edfe5bccd96252fc01c3d561bc214161292feac5533757d29927e82d717b2e86  wfgy_semantic_firewall.py
+cb50ac57c6202f2de343e28b2e14e30905f0bd06b4ba498c2d22da73553a6d84  wfgy_dt_guard.py
+f417caea2171fe3c12e818c869fd313445683b38adeaa8a9e8e766b18dcfc133  wfgy_env.sh
+28344dabe1a33e8eba918c3450744994758d7bae51fd29d8bffd3659256ca434  wfgy_playbooks.yaml
+eb41596e18d15b4bf4ac996803b792099d3d0a6391a39e00ef70a2ec68442820  wfgy_retry.py
+c9433299dd8151a41831999f64a446066b97ead992292ac43b1602d095773adf  wfgy_router.sh
+011908b120d8d510deada0762df8b5b9955ea06b9aa806efef917e9eaab52bf4  wfgy_semantic_firewall.py
 EOF
 
 sha256sum -c CHECKSUMS.sha256
