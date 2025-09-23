@@ -116,12 +116,12 @@ Expected: TB finishes; LiteLLM logs show `POST /v1/chat/completions … 200 OK`.
 
 Files included in this repo:
 
-* `wfgy_router.sh`
-* `wfgy_retry.py`
-* `wfgy_semantic_firewall.py`
-* `wfgy_dt_guard.py`
+* `wfgy_router.sh`&#x20;
+* `wfgy_retry.py`&#x20;
+* `wfgy_semantic_firewall.py`&#x20;
+* `wfgy_dt_guard.py`&#x20;
+* `wfgy_env.sh`&#x20;
 * `wfgy_playbooks.yaml`
-* `wfgy_env.sh`
 
 Environment:
 
@@ -236,3 +236,33 @@ MIT or Apache-2.0 (choose one and add a LICENSE file).
 
 * Stanford Terminal-Bench: [https://crfm.stanford.edu/terminal-bench/](https://crfm.stanford.edu/terminal-bench/)
 
+---
+
+## File integrity (checksums)
+
+> Pin these to your release so collaborators can verify file integrity.
+
+| File                        | Size (bytes) | SHA256                                                           | MD5                              |
+| --------------------------- | -----------: | ---------------------------------------------------------------- | -------------------------------- |
+| `wfgy_dt_guard.py`          |          869 | f8a487c5b627cb7391e0062d14d03e604acf7867aaa0bbb34e98657570fc6773 | e747acecc3c74a743d974a19bd8bb729 |
+| `wfgy_env.sh`               |          173 | 1a181f5af429060d6e4796a93e157970f796340701694f18fe1e7862717ae623 | 69dc00b10688b4986780e7f27c125581 |
+| `wfgy_playbooks.yaml`       |         1578 | 6e69a9c87b602bbec36d64087521d82014a102a2dc4d6cbc3992a2a19ea7591e | 4525a547eb0674a1b58b525145c8e05e |
+| `wfgy_retry.py`             |         5227 | 17d19905fca5c0f486e1453682f70c7f19871bfb90383849dc66ad4dc31850b1 | af4837e9f1a0f2cdda3c251d9a5cd8f8 |
+| `wfgy_router.sh`            |          743 | c6ea6112ebbf0ae0bfae19c6b95e7d4a2ab6077ed76bdbb60dc2622d9c47297c | 28e99a9194df64fd6edce21d68c769b7 |
+| `wfgy_semantic_firewall.py` |         1194 | edfe5bccd96252fc01c3d561bc214161292feac5533757d29927e82d717b2e86 | edef4e8188d2bca5d00cc7e260084382 |
+
+### Verify locally
+
+```bash
+# paste into repo root
+cat > CHECKSUMS.sha256 <<'EOF'
+f8a487c5b627cb7391e0062d14d03e604acf7867aaa0bbb34e98657570fc6773  wfgy_dt_guard.py
+1a181f5af429060d6e4796a93e157970f796340701694f18fe1e7862717ae623  wfgy_env.sh
+6e69a9c87b602bbec36d64087521d82014a102a2dc4d6cbc3992a2a19ea7591e  wfgy_playbooks.yaml
+17d19905fca5c0f486e1453682f70c7f19871bfb90383849dc66ad4dc31850b1  wfgy_retry.py
+c6ea6112ebbf0ae0bfae19c6b95e7d4a2ab6077ed76bdbb60dc2622d9c47297c  wfgy_router.sh
+edfe5bccd96252fc01c3d561bc214161292feac5533757d29927e82d717b2e86  wfgy_semantic_firewall.py
+EOF
+
+sha256sum -c CHECKSUMS.sha256
+```
