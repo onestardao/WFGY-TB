@@ -1,4 +1,9 @@
 import os, re, json
+
+BANNED_PHRASES = [
+    " eval(", "subprocess", "os.system", "curl ", "wget ", "sudo ", "rm -rf ",
+    "kubectl ", "apt-get ", "brew install ", "tb datasets ", "uvx tb run"
+]
 from typing import Dict, Any
 
 ALLOW_LIST = {"hello-world", "sanitize-git-repo", "extract-safely"}
