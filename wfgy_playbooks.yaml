@@ -1,67 +1,29 @@
-# WFGY Task-Family Playbooks (root-level)
-version: 1
-budget:
-  hard_sec: 300
-  stage1_ratio: 0.72
-  stage2_ratio: 0.20
-  safety_ratio: 0.08
-families:
-  build:
-    detect:
-      any_of: ["package.json", "requirements.txt", "setup.py", "pyproject.toml", "Makefile"]
-      text_hint: ["compile", "install", "build", "pip", "npm", "make"]
-    stage1:
-      args_append: []
-      env: { WF_SAFE_MODE: "0", WF_DETERMINISTIC: "1" }
-    stage2:
-      args_append: ["--safe-mode"]
-      env: { WF_SAFE_MODE: "1", WF_DETERMINISTIC: "1" }
-  file_io:
-    detect:
-      any_of: ["*.csv", "*.json", "*.tsv"]
-      text_hint: ["parse", "csv", "json", "rename", "move", "copy", "extract"]
-    stage1:
-      env: { WF_DETERMINISTIC: "1" }
-      args_append: []
-    stage2:
-      env: { WF_DETERMINISTIC: "1", WF_WDT: "1" }
-      args_append: []
-  path_search:
-    detect:
-      any_of: []
-      text_hint: ["search", "find file", "locate", "path", "grep"]
-    stage1:
-      env: { WF_DETERMINISTIC: "1" }
-      args_append: []
-    stage2:
-      env: { WF_DETERMINISTIC: "1", WF_WDT: "1" }
-      args_append: ["--retry-on-miss"]
-  data_fetch:
-    detect:
-      any_of: []
-      text_hint: ["download", "curl", "wget", "http", "api"]
-    stage1:
-      env: { WF_DETERMINISTIC: "1" }
-      args_append: []
-    stage2:
-      env: { WF_DETERMINISTIC: "1", WF_WDT: "1" }
-      args_append: []
+defaults:
+  seed: ${WFGY_SEED}
+  stage1_tokens: ${WFGY_STAGE1_TOKENS}
+  stage2_tokens: ${WFGY_STAGE2_TOKENS}
+  retry_max: ${WFGY_RETRY_MAX}
+  collapse_threshold: ${WFGY_COLLAPSE_THRESHOLD}
+  earlystop_min_chars: ${WFGY_EARLYSTOP_MIN_CHARS}
+  request_timeout_s: ${WFGY_REQUEST_TIMEOUT_S}
+
+tasks:
+  sanitize-git-repo:
+    guard: strict
+    retry_budget: 2
+    collapse_threshold: 0.16
+    notes: "Prefer short actionable steps. Avoid repo-wide destructive ops."
+  extract-safely:
+    guard: balanced
+    retry_budget: 2
+    collapse_threshold: 0.18
+    notes: "Focus on boundaries, file types, and streaming plan."
+  hello-world:
+    guard: light
+    retry_budget: 1
+    collapse_threshold: 0.20
+    notes: "Keep answers short and final. Do not overthink."
   generic:
-    detect: { any_of: [], text_hint: [] }
-    stage1:
-      env: { WF_DETERMINISTIC: "1" }
-      args_append: []
-    stage2:
-      env: { WF_DETERMINISTIC: "1", WF_WDT: "1" }
-      args_append: []
-
-
-strategy:
-  final_line_rule: "Only output the final answer on a single line. No explanations, no code fences, no trailing punctuation."
-  temps:
-    generic:
-      stage1: { temperature: 0.10, top_p: 0.80 }
-      stage2: { temperature: 0.35, top_p: 0.70 }
-    contract:
-      stage1: { temperature: 0.10, top_p: 0.85 }
-      stage2: { temperature: 0.30, top_p: 0.70 }
+    guard: balanced
+    retry_budget: 2
+    collapse_threshold: 0.18
