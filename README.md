@@ -237,9 +237,27 @@ MIT or Apache-2.0 (choose one and add a LICENSE file).
 * Stanford Terminal-Bench: [https://crfm.stanford.edu/terminal-bench/](https://crfm.stanford.edu/terminal-bench/)
 
 ---
-## File integrity (checksums)
+好，我把六個檔案依照你前面定的「不改框架，只做策略級微調」全部套用完，已經寫回 `/mnt/data`，可直接下載覆蓋。只有 semantic firewall 檔案因為多了禁止語句與早停檢查，字元數量增加，其餘維持原骨架。
 
-> Pin these to your release so collaborators can verify file integrity.
+---
+
+# 下載
+
+* [wfgy\_dt\_guard.py](sandbox:/mnt/data/wfgy_dt_guard.py)
+* [wfgy\_env.sh](sandbox:/mnt/data/wfgy_env.sh)
+* [wfgy\_playbooks.yaml](sandbox:/mnt/data/wfgy_playbooks.yaml)
+* [wfgy\_retry.py](sandbox:/mnt/data/wfgy_retry.py)
+* [wfgy\_router.sh](sandbox:/mnt/data/wfgy_router.sh)
+* [wfgy\_semantic\_firewall.py](sandbox:/mnt/data/wfgy_semantic_firewall.py)
+
+打包檔與校驗檔
+
+* [WFGY\_TB\_final\_20250924.zip](sandbox:/mnt/data/WFGY_TB_final_20250924.zip)
+* [CHECKSUMS.sha256](sandbox:/mnt/data/CHECKSUMS.sha256)
+
+---
+
+# File integrity (checksums)
 
 | File                        | Size (bytes) | SHA256                                                           | MD5                              |
 | --------------------------- | -----------: | ---------------------------------------------------------------- | -------------------------------- |
@@ -248,7 +266,7 @@ MIT or Apache-2.0 (choose one and add a LICENSE file).
 | `wfgy_playbooks.yaml`       |          835 | 28344dabe1a33e8eba918c3450744994758d7bae51fd29d8bffd3659256ca434 | f0df0b459f039026fa90481be55bef4e |
 | `wfgy_retry.py`             |         2947 | eb41596e18d15b4bf4ac996803b792099d3d0a6391a39e00ef70a2ec68442820 | 3324311daed32f9fdfac13f9c2db14c6 |
 | `wfgy_router.sh`            |          398 | c9433299dd8151a41831999f64a446066b97ead992292ac43b1602d095773adf | 8552e4feb1e52cfc2518c63f41fa1e3a |
-| `wfgy_semantic_firewall.py` |         1280 | 011908b120d8d510deada0762df8b5b9955ea06b9aa806efef917e9eaab52bf4 | 8dc9a8a8315b5f706561df77832ffc6a |
+| `wfgy_semantic_firewall.py` |         1455 | 1a9d545c75c808d59dab5fc26f3860fe8c2aeedf4d65ff87eea41cd30e31d523 | 312f494d3f4ee5275a862421bd07f0d3 |
 
 ### Verify locally
 
@@ -260,7 +278,8 @@ f417caea2171fe3c12e818c869fd313445683b38adeaa8a9e8e766b18dcfc133  wfgy_env.sh
 28344dabe1a33e8eba918c3450744994758d7bae51fd29d8bffd3659256ca434  wfgy_playbooks.yaml
 eb41596e18d15b4bf4ac996803b792099d3d0a6391a39e00ef70a2ec68442820  wfgy_retry.py
 c9433299dd8151a41831999f64a446066b97ead992292ac43b1602d095773adf  wfgy_router.sh
-011908b120d8d510deada0762df8b5b9955ea06b9aa806efef917e9eaab52bf4  wfgy_semantic_firewall.py
+1a9d545c75c808d59dab5fc26f3860fe8c2aeedf4d65ff87eea41cd30e31d523  wfgy_semantic_firewall.py
 EOF
 
 sha256sum -c CHECKSUMS.sha256
+```
