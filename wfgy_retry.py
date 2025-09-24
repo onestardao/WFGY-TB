@@ -1,88 +1,146 @@
-import os, time, json, random, logging, uuid, math
-from typing import Callable, Dict, Any, Optional
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s",
-    handlers=[logging.StreamHandler()],
-)
-LOG = logging.getLogger("wfgy-retry")
-
-def _env_int(name: str, dflt: int) -> int:
+#!/usr/bin/env python3
+import argparse, os, sys, time, subprocess, json, pathlib, yaml, re
+def load_playbook(path):
+    with open(path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
+def now_ms():
+    import time as _t
+    return int(_t.time() * 1000)
+def run_with_timeout(cmd, env, timeout_sec, log_path):
+    start = now_ms()
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env, text=True)
+    out_chunks = []
     try:
-        return int(os.getenv(name, dflt))
-    except Exception:
-        return dflt
-
-def _env_float(name: str, dflt: float) -> float:
+        out, _ = proc.communicate(timeout=timeout_sec)
+        out_chunks.append(out or "")
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        out_chunks.append("\n[wfgy] timeout kill\n")
+        return 124, "".join(out_chunks), now_ms() - start
+    rc = proc.returncode
+    out_s = "".join(out_chunks) + out
+    pathlib.Path(log_path).parent.mkdir(parents=True, exist_ok=True)
+    with open(log_path, "w", encoding="utf-8") as f:
+        f.write(out_s)
+    return rc, out_s, now_ms() - start
+def choose_family(task_dir, playbook):
+    from glob import glob
+    def match_any(filespecs):
+        for spec in filespecs:
+            if spec.startswith("*."):
+                if glob(os.path.join(task_dir, spec)):
+                    return True
+            else:
+                if os.path.exists(os.path.join(task_dir, spec)):
+                    return True
+        return False
+    text = ""
+    for name in ["README.md", "readme.md", "task.txt", "instructions.txt"]:
+        fp = os.path.join(task_dir, name)
+        if os.path.exists(fp):
+            try:
+                with open(fp, "r", encoding="utf-8", errors="ignore") as f:
+                    text += "\n" + f.read()
+            except:
+                pass
+    families = playbook.get("families", {})
+    for fam, conf in families.items():
+        det = conf.get("detect", {})
+        any_of = det.get("any_of", [])
+        hints = det.get("text_hint", [])
+        ok_file = match_any(any_of) if any_of else False
+        ok_hint = any(re.search(h, text, re.I) for h in hints) if hints else False
+        if ok_file or ok_hint:
+            return fam
+    return "generic"
+def format_cmd(base_cmd, args_append):
+    return base_cmd + (args_append or [])
+def main():
+    ap = argparse.ArgumentParser(description="WFGY two-stage retry with time budgeting")
+    ap.add_argument("--task-dir", required=True)
+    ap.add_argument("--family", default=None)
+    ap.add_argument("--playbook", default="wfgy_playbooks.yaml")
+    ap.add_argument("--budget-sec", type=int, default=300)
+    ap.add_argument("--log-dir", default="wfgy_logs")
+    ap.add_argument("base_cmd", nargs=argparse.REMAINDER)
+    args = ap.parse_args()
+    if args.base_cmd and args.base_cmd[0] == "--":
+        args.base_cmd = args.base_cmd[1:]
+    if not args.base_cmd:
+        print("[wfgy] error: base command missing after --", file=sys.stderr)
+        return 2
+    play = load_playbook(args.playbook)
+    fam = args.family or choose_family(args.task_dir, play)
+    conf = play["families"].get(fam, play["families"]["generic"])
+    hard = min(args.budget_sec, play.get("budget", {}).get("hard_sec", 300))
+    s1_ratio = play.get("budget", {}).get("stage1_ratio", 0.72)
+    s2_ratio = play.get("budget", {}).get("stage2_ratio", 0.20)
+    safety = play.get("budget", {}).get("safety_ratio", 0.08)
+    s1_sec = int(hard * s1_ratio)
+    s2_sec = int(hard * s2_ratio)
+    safety_ms = int(hard * safety * 1000)
+    log_root = os.path.join(args.log_dir, pathlib.Path(args.task_dir).name)
+    pathlib.Path(log_root).mkdir(parents=True, exist_ok=True)
+    base_cmd = args.base_cmd
+    env_base = os.environ.copy()
+    env_base["WF_TASK_DIR"] = os.path.abspath(args.task_dir)
+    env_base["WF_FAMILY"] = fam
+    env1 = env_base.copy()
+    env1.update({k:str(v) for k,v in conf.get("stage1", {}).get("env", {}).items()})
+    cmd1 = format_cmd(base_cmd, conf.get("stage1", {}).get("args_append", []))
+    rc1, out1, dur1 = run_with_timeout(cmd1, env1, s1_sec, os.path.join(log_root, "stage1.log"))
+    collapse = False
     try:
-        return float(os.getenv(name, dflt))
+        p = subprocess.Popen([sys.executable, "wfgy_dt_guard.py"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        j, _ = p.communicate(input=out1, timeout=3)
+        flag = json.loads(j)
+        collapse = flag.get("collapse", False)
     except Exception:
-        return dflt
-
-RETRY_MAX = _env_int("WFGY_RETRY_MAX", 2)
-BASE_DELAY_MS = _env_int("WFGY_RETRY_BASE_DELAY_MS", 250)
-JITTER_MS = _env_int("WFGY_RETRY_JITTER_MS", 120)
-REQUEST_TIMEOUT_S = _env_int("WFGY_REQUEST_TIMEOUT_S", 90)
-
-COLLAPSE_THRESHOLD = _env_float("WFGY_COLLAPSE_THRESHOLD", 0.18)
-EARLYSTOP_MIN_CHARS = _env_int("WFGY_EARLYSTOP_MIN_CHARS", 64)
-
-def _entropy_ratio(text: str) -> float:
-    if not text:
-        return 0.0
-    from collections import Counter
-    c = Counter(text)
-    n = sum(c.values())
-    probs = [v / n for v in c.values()]
-    h = -sum(p * math.log(p + 1e-12) for p in probs)
-    denom = math.log(len(c) + 1e-12)
-    return h / denom if denom > 0 else 0.0
-
-def _collapsed(text: str) -> bool:
-    if len(text) < EARLYSTOP_MIN_CHARS:
-        return True
-    return _entropy_ratio(text) < COLLAPSE_THRESHOLD
-
-def _sleep_backoff(try_idx: int) -> None:
-    delay_ms = min(BASE_DELAY_MS * (2 ** try_idx), 3000)
-    jitter = random.randint(0, JITTER_MS)
-    time.sleep((delay_ms + jitter) / 1000.0)
-
-def send_with_retry(send_fn: Callable[[], Dict[str, Any]],
-                    redact: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None) -> Dict[str, Any]:
-    req_id = str(uuid.uuid4())[:8]
-    for t in range(RETRY_MAX + 1):
-        t0 = time.time()
-        try:
-            resp = send_fn()
-        except Exception as e:
-            LOG.warning(json.dumps({
-                "req": req_id, "try": t, "kind": "exception", "error": repr(e)
-            }))
-            resp = {"ok": False, "error": repr(e)}
-
-        took = time.time() - t0
-        if resp.get("ok") and isinstance(resp.get("text"), str):
-            text = resp["text"]
-            collapsed = _collapsed(text)
-            LOG.info(json.dumps({
-                "req": req_id, "try": t, "ok": True, "took_s": round(took, 3),
-                "len": len(text), "collapsed": collapsed
-            }))
-            if collapsed and t < RETRY_MAX:
-                _sleep_backoff(t)
-                continue
-            return resp
-
-        LOG.warning(json.dumps({
-            "req": req_id, "try": t, "ok": False, "took_s": round(took, 3),
-            "error": resp.get("error", "unknown")
-        }))
-        if t < RETRY_MAX:
-            _sleep_backoff(t)
-
-    return {"ok": False, "error": "exhausted"}
-
+        pass
+    if rc1 == 0 and not collapse:
+        print(json.dumps({"family": fam, "stage": 1, "rc": rc1, "ms": dur1}))
+        return 0
+    elapsed_ms = dur1
+    remain_ms = hard*1000 - elapsed_ms - safety_ms
+    if remain_ms <= 5000:
+        print(json.dumps({"family": fam, "stage": 1, "rc": rc1, "ms": dur1, "note": "no time for stage2"}))
+        return rc1 if rc1 != 0 else 0
+    env2 = env_base.copy()
+    env2.update({k:str(v) for k,v in conf.get("stage2", {}).get("env", {}).items()})
+    cmd2 = format_cmd(base_cmd, conf.get("stage2", {}).get("args_append", []))
+    rc2, out2, dur2 = run_with_timeout(cmd2, env2, int(remain_ms/1000), os.path.join(log_root, "stage2.log"))
+    best_rc = rc2 if rc2 == 0 else rc1
+    print(json.dumps({"family": fam, "stage": 2, "rc1": rc1, "rc2": rc2, "ms1": dur1, "ms2": dur2}))
+    return 0 if best_rc == 0 else best_rc
 if __name__ == "__main__":
-    LOG.info("wfgy_retry loaded. This file provides send_with_retry().")
+    sys.exit(main())
+
+
+# === WFGY micro-upgrade helpers (non-invasive) ===
+import re, os
+STRICT_ONE_LINER = os.getenv("WFGY_FW_STRICT_ONE_LINER","0") == "1"
+def ensure_one_liner(text: str) -> str:
+    if not isinstance(text,str): return ""
+    text = re.sub(r"```[\s\S]*?```"," ", text)
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    text = re.sub(r"^[\s>*-]+","", text, flags=re.M)
+    parts = [ln.strip() for ln in text.splitlines() if ln.strip()] 
+    if not parts: return ""
+    one = parts[0]
+    one = re.sub(r"[\s\u3000]+$", "", one)
+    one = re.sub(r"[\s\.。！!。]+$", "", one)
+    return one
+
+def _bad_keywords(s: str) -> bool:
+    low = (s or "").lower()
+    for k in ["?","clarify","as a language model","i cannot","i can't","i am unable"]:
+        if k in low: return True
+    return False
+
+def pick_best_one_liner(cands):
+    cands = [c for c in cands if isinstance(c, str) and c.strip()]
+    if not cands: return ""
+    cands = [ensure_one_liner(c) if STRICT_ONE_LINER else c for c in cands]
+    cands = [c for c in cands if c and not _bad_keywords(c)]
+    if not cands: return ""
+    return min(cands, key=lambda s: (len(s.strip()), s))
