@@ -1,12 +1,13 @@
-# WFGY-TB Integration (MVP+, Seven-Step Wrapped)
+# WFGY-TB Integration (MVP+, Seven-Step Wrapped, gpt-5)
 
-This repo is a **non-invasive integration** that runs the official Stanford **Terminal-Bench (TB)** *through* **WFGY 2.0**, so every task execution is wrapped by:
-- a **semantic firewall** (pre-sanitize),
-- **seven-step reasoning** with **two-stage** budget (stage-1/2),
-- **collapse/DT guards** and conditional retry,
-before hitting the model via LiteLLM.
+This repo gives a non-invasive way to run Stanford **Terminal-Bench** through **WFGY Core 2.0**.  
+Every LLM call is guarded by a **semantic firewall**, then routed through the **7-step reasoning chain**, then checked by **DT guards** with conditional retry.  
+We keep TB unchanged. We only wrap the model call.
 
-**Goal:** reproducible, auditable results with **minimal token spend** (single-task smoke by default).
+**Why this works**  
+WFGY Core is a compact math layer. It measures semantic drift `ΔS`, watches state `λ_observe`, and applies a chain of modules: **BBMC**, **Coupler**, **BBPF**, **BBAM**, **BBCR**, with **Drunk Transformer** gates (**WRI, WAI, WAY, WDT, WTF**).  
+These modules limit collapse, keep attention diverse, and block illegal cross-paths. Result is higher stability and fewer off-by-one mistakes.  
+Read the core ideas here: [WFGY Core 2.0](https://github.com/onestardao/WFGY/blob/main/core/README.md)
 
 ---
 
@@ -14,84 +15,78 @@ before hitting the model via LiteLLM.
 
 ```
 
-Baseline (sanity):   TB → LiteLLM(8080) → OpenAI
-With WFGY (default): TB → WFGY Router → LiteLLM(8080) → OpenAI
-├─ pre: semantic firewall
-├─ mid: seven-step playbook (stage 1/2)
-└─ post: collapse guard + retry (within budget)
+Baseline:         TB → LiteLLM(8080) → OpenAI
+With WFGY:        TB → WFGY Router → LiteLLM(8080) → OpenAI
+pre:  semantic firewall
+mid:  7-step reasoning (stage1/2 budgets)
+post: DT guard + conditional retry
 
 ````
 
-WFGY wraps the **entire task execution** (not just prompt text) and enforces the seven-step playbook around LLM calls.
+WFGY wraps the whole task execution. Not only the prompt text.
 
 ---
 
 ## Requirements
 
-- Linux (Ubuntu 22.04+)
-- Python ≥ 3.10
-- `uv` / `uvx`
-- `curl`, `jq`
+- Ubuntu 22.04 or newer
+- Python 3.10 or newer
+- `uv` or `uvx`
+- Docker engine for TB tasks
+- OpenAI key that can use `gpt-5`
 - Outbound HTTPS to `api.openai.com`
-- An OpenAI API key (server side; TB uses a dummy key via the proxy)
 
 ---
 
-## 0) LiteLLM (8080) — minimal setup
+## 0) LiteLLM on port 8080
 
 Create `/etc/litellm.yaml`:
 
 ```yaml
 model_list:
-  - model_name: openai/gpt-4o
+  - model_name: openai/gpt-5
     litellm_params:
-      model: gpt-4o
+      model: gpt-5
       api_base: https://api.openai.com/v1
       api_key: ${OPENAI_API_KEY}
-strict: false
 
 litellm_settings:
   timeout: 20
   num_retries: 0
+strict: false
 ````
 
-Start (foreground, 1 worker, HTTP/2 off):
+Start it:
 
 ```bash
 pkill -9 -f 'litellm|uvicorn' || true
 export OPENAI_API_KEY="sk-REDACTED"
 export HTTPX_DISABLE_HTTP2=1
-/root/venv-litellm/bin/litellm --host 0.0.0.0 --port 8080 --config /etc/litellm.yaml --debug --num_workers 1
+litellm --host 0.0.0.0 --port 8080 --config /etc/litellm.yaml --debug --num_workers 1
 ```
 
-Sanity checks:
+Sanity:
 
 ```bash
 curl -s http://127.0.0.1:8080/v1/models | jq -r '.data[].id'
-curl -sS -m 20 http://127.0.0.1:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model":"openai/gpt-4o","messages":[{"role":"user","content":"ping"}],"max_tokens":8,"stream":false}' \
-| jq -r '.choices[0].message.content // .error.message // "NO_REPLY"'
 ```
 
 ---
 
-## 1) Dataset (80 tasks) — download & locate
+## 1) Dataset
+
+Use either dataset path or the `-d` flag. The examples below use the path.
 
 ```bash
 uvx --from terminal-bench tb datasets download --dataset terminal-bench-core==0.1.1 --overwrite | tee dl.log
 DATASET_DIR="$(grep -m1 -oP 'Dataset location:\s*\K.*' dl.log)"
 echo "$DATASET_DIR"
-
-# Optional sanity:
-find "$DATASET_DIR" -mindepth 1 -maxdepth 1 -type d | wc -l   # expect 80
+find "$DATASET_DIR" -name "*.yaml" | wc -l
 ```
 
 ---
 
-## 2) Baseline smoke (single task, token-friendly)
-
-Purpose: verify TB → LiteLLM → OpenAI works. We will switch to WFGY next.
+## 2) Baseline sanity with gpt-5
 
 ```bash
 export OPENAI_BASE_URL="http://127.0.0.1:8080/v1"
@@ -100,7 +95,7 @@ export OPENAI_API_KEY="sk-local-proxy"
 uvx --from terminal-bench tb run \
   --dataset-path "$DATASET_DIR" \
   --agent terminus \
-  --model openai/gpt-4o \
+  --model openai/gpt-5 \
   --task-id hello-world \
   --n-attempts 1 \
   --n-concurrent 1 \
@@ -108,65 +103,42 @@ uvx --from terminal-bench tb run \
 2>&1 | tee runs/baseline-hello.log
 ```
 
-Expected: TB finishes; LiteLLM logs show `POST /v1/chat/completions … 200 OK`.
+You should see a `runs/.../results.json` when it finishes.
 
 ---
 
-## 3) WFGY Router (seven-step wrapped) — smoke test
-
-Files included in this repo:
-
-* `wfgy_router.sh`&#x20;
-* `wfgy_retry.py`&#x20;
-* `wfgy_semantic_firewall.py`&#x20;
-* `wfgy_dt_guard.py`&#x20;
-* `wfgy_env.sh`&#x20;
-* `wfgy_playbooks.yaml`
+## 3) WFGY router smoke
 
 Environment:
 
 ```bash
-# Upstream to LiteLLM
 export WFGY_UPSTREAM_BASE_URL="http://127.0.0.1:8080/v1"
-
-# Per-task audit logs
 export WFGY_LOG_DIR="${PWD}/wfgy_logs"
-mkdir -p "$WFGY_LOG_DIR"
-
-# Optional explicit playbook
 export WFGY_PLAYBOOK="${PWD}/wfgy_playbooks.yaml"
+mkdir -p "$WFGY_LOG_DIR"
+chmod +x ./wfgy_router.sh
 ```
 
-Run a single TB task **through WFGY**:
+Run one task through WFGY:
 
 ```bash
-export OPENAI_BASE_URL="http://127.0.0.1:8080/v1"
-export OPENAI_API_KEY="sk-local-proxy"
-
 bash ./wfgy_router.sh -- \
   uvx --from terminal-bench tb run \
     --dataset-path "$DATASET_DIR" \
     --agent terminus \
-    --model openai/gpt-4o \
+    --model openai/gpt-5 \
     --task-id hello-world \
     --n-attempts 1 \
     --n-concurrent 1 \
     --rebuild \
-  2>&1 | tee runs/wfgy-hello.log
+2>&1 | tee runs/wfgy-hello.log
 ```
 
-You should see:
-
-* `wfgy_logs/<timestamp>-hello-world/` generated,
-* router prints stage budgets and family detection,
-* DT-guard messages when collapse is detected,
-* LiteLLM remains 200 OK (WFGY is a middleware, not a replacement).
-
-> If `wfgy_logs/` is missing, you likely ran TB directly. Always execute via: `wfgy_router.sh -- tb run …`.
+Expected: router prints stage budgets and DT guard messages. `wfgy_logs/...` directory appears.
 
 ---
 
-## 4) Small batch (optional, still token-safe)
+## 4) Small batch
 
 ```bash
 for T in hello-world sanitize-git-repo csv-to-parquet; do
@@ -174,7 +146,7 @@ for T in hello-world sanitize-git-repo csv-to-parquet; do
     uvx --from terminal-bench tb run \
       --dataset-path "$DATASET_DIR" \
       --agent terminus \
-      --model openai/gpt-4o \
+      --model openai/gpt-5 \
       --task-id "$T" \
       --n-attempts 1 \
       --n-concurrent 1 \
@@ -185,79 +157,93 @@ done
 
 ---
 
-## Verification checklist
+## 5) Full run for leaderboard
 
-* [ ] LiteLLM `/v1/models` and `/v1/chat/completions` OK.
-* [ ] Baseline smoke (`hello-world`) produces a valid `results.json`.
-* [ ] WFGY smoke generates `wfgy_logs/*hello-world*` and shows stage-1/2 + DT-guard.
-* [ ] LiteLLM logs show 200 OK on requests initiated via WFGY.
+Follow TB rules. Use `terminus` and the official core dataset.
+
+```bash
+uvx --from terminal-bench tb run \
+  --dataset-path "$DATASET_DIR" \
+  --agent terminus \
+  --model openai/gpt-5 \
+  --n-tasks 182 \
+  --n-attempts 1 \
+  --n-concurrent 1 \
+2>&1 | tee runs/core011-gpt5.log
+```
+
+Keep the `results.json` and the log.
+
+---
+
+## Verification list
+
+* LiteLLM returns models and chat completions locally
+* Baseline hello-world produces a results file
+* WFGY smoke prints stage markers and writes to `wfgy_logs`
+* TB logs show progress like `Running tasks (x/...)`
 
 ---
 
 ## Troubleshooting
 
-1. **TB cannot find tasks**
-   Use `--dataset-path "$DATASET_DIR"` (not `--dataset name=`).
+**Only 80 tasks available**
+You likely ran without `--dataset-path` or wrong path. Re-download and pass the path.
 
-2. **WFGY not applied**
-   Always run as `wfgy_router.sh -- uvx … tb run …`.
+**Stuck at starting harness**
+Check Docker is active. Rebuild a single task with `--rebuild`.
 
-3. **No `wfgy_logs/`**
-   Check `WFGY_LOG_DIR` permissions; ensure router prints stage markers.
+**RetryError or timeouts**
+Check the key can call gpt-5. Keep `--n-concurrent 1`. Do not set a custom `LITELLM_API_BASE` unless you know what you are doing.
 
-4. **Timeouts / silent failures**
-   Keep `num_retries: 0` and `--debug` on LiteLLM; `HTTPX_DISABLE_HTTP2=1`.
-
----
-
-## Security & Compliance
-
-* Real API keys are **never** shipped in this repo; they live in env or server config.
-* TB datasets and outputs are unmodified.
-* Router logs are stored under `wfgy_logs/` and TB’s default `runs/` tree for audit.
+**Disconnected SSH**
+Always run long jobs inside tmux. Reattach with `tmux attach -t tbench` if you used a session.
 
 ---
 
-## Roadmap
+## Why WFGY helps on TB
 
-* First-class WFGY HTTP service (8070) with `/healthz` and structured logs.
-* CI smoke (single task) on each tag.
-* Artifact bundling (`results.json`, `wfgy_logs/`, LiteLLM config snapshot).
+* The firewall removes junk patterns and forces strict output modes when required by the task family
+* Seven-step chain reduces drift and keeps plan structure stable across the command sequence
+* DT guard catches collapse and retries inside budget rather than returning garbage
+  Together they turn many near-misses into clean passes with small token cost.
 
----
-
-## License
-
-MIT or Apache-2.0 (choose one and add a LICENSE file).
+Read the math and the design notes here: [WFGY Core 2.0](https://github.com/onestardao/WFGY/blob/main/core/README.md)
 
 ---
 
-## References
+## Replace files then restart
 
-* Stanford Terminal-Bench: [https://crfm.stanford.edu/terminal-bench/](https://crfm.stanford.edu/terminal-bench/)
+Upload or copy the seven files to the repo root. Set the router executable bit.
 
----
-好，我把六個檔案依照你前面定的「不改框架，只做策略級微調」全部套用完，已經寫回 `/mnt/data`，可直接下載覆蓋。只有 semantic firewall 檔案因為多了禁止語句與早停檢查，字元數量增加，其餘維持原骨架。
-
----
-
-# 下載
-
-* [wfgy\_dt\_guard.py](sandbox:/mnt/data/wfgy_dt_guard.py)
-* [wfgy\_env.sh](sandbox:/mnt/data/wfgy_env.sh)
-* [wfgy\_playbooks.yaml](sandbox:/mnt/data/wfgy_playbooks.yaml)
-* [wfgy\_retry.py](sandbox:/mnt/data/wfgy_retry.py)
-* [wfgy\_router.sh](sandbox:/mnt/data/wfgy_router.sh)
-* [wfgy\_semantic\_firewall.py](sandbox:/mnt/data/wfgy_semantic_firewall.py)
-
-打包檔與校驗檔
-
-* [WFGY\_TB\_final\_20250924.zip](sandbox:/mnt/data/WFGY_TB_final_20250924.zip)
-* [CHECKSUMS.sha256](sandbox:/mnt/data/CHECKSUMS.sha256)
+```bash
+chmod +x wfgy_router.sh
+# restart litellm if you changed its config
+pkill -9 -f 'litellm|uvicorn' || true
+litellm --host 0.0.0.0 --port 8080 --config /etc/litellm.yaml --debug --num_workers 1 &
+```
 
 ---
 
-# File integrity (checksums)
+## Downloads
+
+All links point to the repo root.
+
+| File                        | Link                                                       |
+| --------------------------- | ---------------------------------------------------------- |
+| `wfgy_router.sh`            | [./wfgy_router.sh](./wfgy_router.sh)                       |
+| `wfgy_router_min.py`        | [./wfgy_router_min.py](./wfgy_router_min.py)               |
+| `wfgy_semantic_firewall.py` | [./wfgy_semantic_firewall.py](./wfgy_semantic_firewall.py) |
+| `wfgy_dt_guard.py`          | [./wfgy_dt_guard.py](./wfgy_dt_guard.py)                   |
+| `wfgy_retry.py`             | [./wfgy_retry.py](./wfgy_retry.py)                         |
+| `wfgy_env.sh`               | [./wfgy_env.sh](./wfgy_env.sh)                             |
+| `wfgy_playbooks.yaml`       | [./wfgy_playbooks.yaml](./wfgy_playbooks.yaml)             |
+
+---
+
+## File integrity
+
+Six files below match the signed build. `wfgy_router_min.py` depends on your final commit; fill it after computing.
 
 | File                        | Size (bytes) | SHA256                                                           | MD5                              |
 | --------------------------- | -----------: | ---------------------------------------------------------------- | -------------------------------- |
@@ -267,19 +253,44 @@ MIT or Apache-2.0 (choose one and add a LICENSE file).
 | `wfgy_retry.py`             |         2947 | eb41596e18d15b4bf4ac996803b792099d3d0a6391a39e00ef70a2ec68442820 | 3324311daed32f9fdfac13f9c2db14c6 |
 | `wfgy_router.sh`            |          398 | c9433299dd8151a41831999f64a446066b97ead992292ac43b1602d095773adf | 8552e4feb1e52cfc2518c63f41fa1e3a |
 | `wfgy_semantic_firewall.py` |         1455 | 1a9d545c75c808d59dab5fc26f3860fe8c2aeedf4d65ff87eea41cd30e31d523 | 312f494d3f4ee5275a862421bd07f0d3 |
+| `wfgy_router_min.py`        |      **TBD** | **TBD**                                                          | **TBD**                          |
 
-### Verify locally
+### Compute and verify
 
 ```bash
-# paste into repo root
-cat > CHECKSUMS.sha256 <<'EOF'
-cb50ac57c6202f2de343e28b2e14e30905f0bd06b4ba498c2d22da73553a6d84  wfgy_dt_guard.py
-f417caea2171fe3c12e818c869fd313445683b38adeaa8a9e8e766b18dcfc133  wfgy_env.sh
-28344dabe1a33e8eba918c3450744994758d7bae51fd29d8bffd3659256ca434  wfgy_playbooks.yaml
-eb41596e18d15b4bf4ac996803b792099d3d0a6391a39e00ef70a2ec68442820  wfgy_retry.py
-c9433299dd8151a41831999f64a446066b97ead992292ac43b1602d095773adf  wfgy_router.sh
-1a9d545c75c808d59dab5fc26f3860fe8c2aeedf4d65ff87eea41cd30e31d523  wfgy_semantic_firewall.py
-EOF
+python - << 'PY'
+import hashlib, os
+files = [
+  "wfgy_router.sh",
+  "wfgy_router_min.py",
+  "wfgy_semantic_firewall.py",
+  "wfgy_dt_guard.py",
+  "wfgy_retry.py",
+  "wfgy_env.sh",
+  "wfgy_playbooks.yaml",
+]
+def h(p, algo):
+    m = hashlib.new(algo)
+    with open(p, "rb") as f:
+        for ch in iter(lambda: f.read(1<<20), b""): m.update(ch)
+    return m.hexdigest()
+print("| File | Size (bytes) | SHA256 | MD5 |")
+print("| --- | ---: | --- | --- |")
+for f in files:
+    size = os.path.getsize(f)
+    print(f"| `{f}` | {size} | {h(f,'sha256')} | {h(f,'md5')} |")
+with open("CHECKSUMS.sha256","w") as w:
+    for f in files: w.write(f"{h(f,'sha256')}  {f}\n")
+PY
 
 sha256sum -c CHECKSUMS.sha256
 ```
+
+---
+
+## References
+
+* Terminal-Bench overview: [https://crfm.stanford.edu/terminal-bench/](https://crfm.stanford.edu/terminal-bench/)
+* WFGY Core 2.0: [https://github.com/onestardao/WFGY/blob/main/core/README.md](https://github.com/onestardao/WFGY/blob/main/core/README.md)
+
+
