@@ -1,36 +1,26 @@
-import re
-from typing import List
+from typing import Dict
 
-def repeated_ngrams_ratio(text: str, n: int = 3) -> float:
-    toks = text.split()
-    if len(toks) < n * 2:
+def _ngram_repeat_ratio(text: str, n: int) -> float:
+    text = text.strip()
+    if n <= 0 or len(text) < n:
         return 0.0
-    grams = [" ".join(toks[i:i+n]) for i in range(0, len(toks) - n + 1)]
-    total = len(grams)
-    uniq = len(set(grams))
-    return 1.0 - (uniq / max(total, 1))
+    counts = {}
+    total = 0
+    for i in range(len(text) - n + 1):
+        g = text[i:i+n]
+        counts[g] = counts.get(g,0) + 1
+        total += 1
+    if total == 0:
+        return 0.0
+    return max(counts.values()) / total
 
-def illegal_cross_paths(text: str) -> bool:
-    bad = [
-        r"ignore previous instructions",
-        r"disregard.*rules",
-        r"format.*then.*different format",
-    ]
-    for p in bad:
-        if re.search(p, text, re.I | re.S):
-            return True
-    return False
+def detect_collapse(text: str, family_params: Dict) -> bool:
+    cfg = family_params.get("dt_guard", {})
+    n = int(cfg.get("ngram_n", 5))
+    limit = float(cfg.get("max_repeat_ratio", 0.2))
+    return _ngram_repeat_ratio(text, n) >= limit
 
-def collapse_suspected(text: str) -> bool:
-    if repeated_ngrams_ratio(text, 3) > 0.35:
-        return True
-    if re.search(r"(\b\w+\b)(?:\s+\1){3,}", text, re.I):
-        return True
-    return False
-
-def apply(text: str) -> str:
-    if illegal_cross_paths(text):
-        raise ValueError("illegal cross path detected")
-    if collapse_suspected(text):
-        return text[:1024]
-    return text
+def enforce(text: str, family_params: Dict) -> str:
+    cfg = family_params.get("dt_guard", {})
+    max_len = int(cfg.get("truncate_after", 768))
+    return text[:max_len] if max_len > 0 and len(text) > max_len else text

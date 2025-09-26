@@ -1,14 +1,35 @@
 #!/usr/bin/env bash
-set -Eeuo pipefail
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
-
-source ./wfgy_env.sh
-
-pkill -f "python.*wfgy_retry.py" >/dev/null 2>&1 || true
-
-nohup python3 -u wfgy_retry.py       >>"$WFGY_PROXY_LOG_FILE" 2>&1 &
-
-echo "[wfgy-router] started (pid=$!) → port $WFGY_ROUTER_PORT"
-sleep 0.3
-echo "[wfgy-router] tail -n 100 -f $WFGY_PROXY_LOG_FILE"
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$here"
+if [ -f "./wfgy_env.sh" ]; then
+  source ./wfgy_env.sh
+fi
+cmd="${1:-start}"
+start() {
+  echo "[wfgy] starting router (dry-run: ${WFGY_DRY_RUN:-1})"
+  nohup python3 wfgy_router_min.py >/tmp/wfgy_router.log 2>&1 &
+  echo $! > /tmp/wfgy_router.pid
+  echo "[wfgy] pid $(cat /tmp/wfgy_router.pid)"
+}
+stop() {
+  if [ -f /tmp/wfgy_router.pid ]; then
+    pid=$(cat /tmp/wfgy_router.pid)
+    if ps -p "$pid" >/dev/null 2>&1; then
+      kill "$pid" || true
+      sleep 1
+    fi
+    rm -f /tmp/wfgy_router.pid
+  else
+    pkill -f wfgy_router_min.py || true
+  fi
+  echo "[wfgy] stopped"
+}
+reload() { stop; start; }
+case "$cmd" in
+  start) start ;;
+  stop) stop ;;
+  restart) reload ;;
+  reload) reload ;;
+  *) echo "usage: $0 {start|stop|reload|restart}" ; exit 1 ;;
+esac

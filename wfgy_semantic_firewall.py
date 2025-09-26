@@ -1,44 +1,39 @@
-import os, re, json
+from typing import Dict, List, Tuple
 
-BANNED_PHRASES = [
-    " eval(", "subprocess", "os.system", "curl ", "wget ", "sudo ", "rm -rf ",
-    "kubectl ", "apt-get ", "brew install ", "tb datasets ", "uvx tb run"
-]
-from typing import Dict, Any
+def _truncate(s: str, max_len: int) -> str:
+    return s[:max_len] if max_len > 0 and len(s) > max_len else s
 
-ALLOW_LIST = {"hello-world", "sanitize-git-repo", "extract-safely"}
+def _contains_any(s: str, pats: List[str]) -> bool:
+    low = s.lower()
+    return any(p and p.lower() in low for p in pats)
 
-def _redact_keys(payload: Dict[str, Any]) -> Dict[str, Any]:
-    out = json.loads(json.dumps(payload))
-    def redact(s: str) -> str:
-        if not isinstance(s, str):
-            return s
-        s = re.sub(r"sk-[A-Za-z0-9_\-]{20,}", "[REDACTED_KEY]", s)
-        return s
-    if "messages" in out:
-        for m in out["messages"]:
-            for k in ("content", "text"):
-                if k in m and isinstance(m[k], str):
-                    m[k] = redact(m[k])
-    return out
+def _allow_symbol(c: str, allowed: List[str]) -> bool:
+    return c.isalnum() or (c in allowed) or c.isspace()
 
-def sanitize_prompt(task: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    task = task or "generic"
-    messages = payload.get("messages") or []
-    max_sys = 8000
+def _strip_disallowed_chars(s: str, allowed: List[str]) -> str:
+    return "".join(ch for ch in s if _allow_symbol(ch, allowed))
+
+def gate(messages: List[Dict], family_params: Dict) -> Tuple[List[Dict], Dict]:
+    fw = family_params.get("firewall", {})
+    max_system_len = int(fw.get("max_system_len", 480))
+    allow_symbols = list(fw.get("allow_symbols", [".",",",":",";","-","_","+","=","*","/","\\"]))
+    banned_patterns = list(fw.get("banned_patterns", []))
+    _ = list(fw.get("whitelist_tokens", []))
+
+    logs = {"truncated": False, "stripped": False, "blocked": False}
+    out = []
     for m in messages:
-        if m.get("role") == "system" and isinstance(m.get("content"), str):
-            m["content"] = m["content"][:max_sys]
-    max_user = 6000
-    for m in messages:
-        if m.get("role") == "user" and isinstance(m.get("content"), str):
-            m["content"] = m["content"][:max_user]
-    return _redact_keys(payload)
-
-def gate(task: str) -> bool:
-    if task in ALLOW_LIST:
-        return True
-    return True
-
-if __name__ == "__main__":
-    print("semantic firewall ready")
+        role = m.get("role","user")
+        content = str(m.get("content",""))
+        if role != "system" and _contains_any(content, banned_patterns):
+            logs["blocked"] = True
+            content = _strip_disallowed_chars(content, allow_symbols)
+            logs["stripped"] = True
+        if role == "system" and len(content) > max_system_len:
+            content = _truncate(content, max_system_len)
+            logs["truncated"] = True
+        cleaned = _strip_disallowed_chars(content, allow_symbols)
+        if cleaned != content:
+            logs["stripped"] = True
+        out.append({"role": role, "content": cleaned})
+    return out, logs
