@@ -11,6 +11,14 @@ Read the core ideas here: [WFGY Core 2.0](https://github.com/onestardao/WFGY/blo
 
 ---
 
+## 📌 Status
+
+The reproducible scripts and result files are **not yet uploaded**.  
+We are actively updating, and the full package (logs, configs, reproduction guide) will be published once the official Terminal-Bench leaderboard results are out.  
+Stay tuned for the public release — all contents will be open-sourced here under the same license.
+
+---
+
 ## Architecture
 
 ```
